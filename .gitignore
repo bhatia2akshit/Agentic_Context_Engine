@@ -1,0 +1,5 @@
+.agentic_ce/
+*.env.local
+__pycache__/
+.env
+.vscode/

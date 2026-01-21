@@ -1,0 +1,17 @@
+fastapi
+uvicorn[standard]
+
+python-dotenv
+pydantic
+
+python-jose[cryptography]
+
+langchain
+langchain-community
+langchain-mistralai
+langchain-chroma
+
+pypdf
+sentence-transformers
+fastapi
+python-multipart
