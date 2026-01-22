@@ -66,6 +66,7 @@ docker build -f backend/Dockerfile -t rulebook-backend backend
 docker build -f backend/Dockerfile.agent -t rulebook-agent backend
 ```
 
+
 ### Build frontend image
 
 ```bash
