@@ -66,6 +66,13 @@ docker build -f backend/Dockerfile -t rulebook-backend backend
 docker build -f backend/Dockerfile.agent -t rulebook-agent backend
 ```
 
+
+### Build frontend image
+
+```bash
+docker build -f rulebook-frontend/Dockerfile -t rulebook-frontend rulebook-frontend
+```
+
 ### Run backend image
 
 ```bash
@@ -82,6 +89,14 @@ docker run --rm \
   -p 8001:8000 \
   --env-file backend/.env.local \
   rulebook-agent
+```
+
+### Run frontend image
+
+```bash
+docker run --rm \
+  -p 3000:3000 \
+  rulebook-frontend
 ```
 
 ## API usage
