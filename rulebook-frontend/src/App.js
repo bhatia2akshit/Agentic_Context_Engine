@@ -5,34 +5,83 @@ function App() {
   const [activeTab, setActiveTab] = useState(1);
   
   // State for Tab 1 (Load Data)
-  const [documentText, setDocumentText] = useState('');
+  const [pdfFile, setPdfFile] = useState(null);
+  const [jsonFile, setJsonFile] = useState(null);
   const [loadMessage, setLoadMessage] = useState('');
+  const [authMessage, setAuthMessage] = useState('');
   
   // State for Tab 2 (Chat)
   const [question, setQuestion] = useState('');
   const [sessionState, setSessionState] = useState(null);
   const [response, setResponse] = useState('');
-  const [sessionId, setSessionId] = useState('');
+
+  // Auth state
+  const [username, setUsername] = useState('testuser');
+  const [password, setPassword] = useState('testpassword');
+  const [accessToken, setAccessToken] = useState('');
 
   // Your API base URL - CHANGE THIS to your actual backend URL
-  const API_BASE_URL = 'http://0.0.0.0:8000';
+  const API_BASE_URL = 'http://localhost:8000';
+
+  const handleLogin = async () => {
+    try {
+      setAuthMessage('');
+      const form = new URLSearchParams();
+      form.append('username', username);
+      form.append('password', password);
+
+      const res = await fetch(`${API_BASE_URL}/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: form.toString()
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setAuthMessage(data.detail || 'Login failed');
+        return;
+      }
+
+      setAccessToken(data.access_token || '');
+      setAuthMessage('Logged in');
+    } catch (error) {
+      setAuthMessage('Login error: ' + error.message);
+    }
+  };
 
   // Function to load document data (Tab 1)
   const handleLoadData = async () => {
     try {
+      if (!pdfFile || !jsonFile) {
+        setLoadMessage('Please choose both a PDF and a JSON file.');
+        return;
+      }
+      if (!accessToken) {
+        setLoadMessage('Please log in to get an access token first.');
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('pdf_file', pdfFile);
+      formData.append('json_file', jsonFile);
+
       // Make API call to load_data endpoint
       const res = await fetch(`${API_BASE_URL}/load_data`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`
         },
-        body: JSON.stringify({
-          document_text: documentText
-        })
+        body: formData
       });
       
       const data = await res.json();
+      if (!res.ok) {
+        setLoadMessage(data.detail || 'Failed to load data.');
+        return;
+      }
       setLoadMessage(data.message || 'Data loaded successfully!');
+      setSessionState(data.session_state || null);
+      setActiveTab(2);
     } catch (error) {
       setLoadMessage('Error loading data: ' + error.message);
     }
@@ -41,20 +90,28 @@ function App() {
   // Function to ask a question (Tab 2)
   const handleAskQuestion = async () => {
     try {
+      if (!accessToken) {
+        setResponse('Please log in to get an access token first.');
+        return;
+      }
       // Make API call to ask question endpoint
-      const res = await fetch(`${API_BASE_URL}/ask`, {
+      const res = await fetch(`${API_BASE_URL}/query_ai`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`
         },
         body: JSON.stringify({
-          session_id: sessionId,
           question: question
         })
       });
       
       const data = await res.json();
-      setResponse(data.answer || 'No answer received');
+      if (!res.ok) {
+        setResponse(data.detail || 'No answer received');
+        return;
+      }
+      setResponse(data.response || 'No answer received');
       setSessionState(data.session_state);
     } catch (error) {
       setResponse('Error: ' + error.message);
@@ -64,8 +121,20 @@ function App() {
   // Function to get current session state
   const handleGetSessionState = async () => {
     try {
-      const res = await fetch(`${API_BASE_URL}/session/${sessionId}`);
+      if (!accessToken) {
+        setSessionState({ error: 'Please log in to get an access token first.' });
+        return;
+      }
+      const res = await fetch(`${API_BASE_URL}/session_state`, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`
+        }
+      });
       const data = await res.json();
+      if (!res.ok) {
+        setSessionState({ error: data.detail || 'Failed to get session state.' });
+        return;
+      }
       setSessionState(data);
     } catch (error) {
       setSessionState({ error: error.message });
@@ -108,13 +177,62 @@ function App() {
         {activeTab === 1 && (
           <div className="bg-white rounded-lg shadow p-6">
             <h2 className="text-xl font-semibold mb-4">Load Document Data</h2>
-            
-            <textarea
-              value={documentText}
-              onChange={(e) => setDocumentText(e.target.value)}
-              placeholder="Paste your document text here..."
-              className="w-full h-64 p-3 border border-gray-300 rounded-lg mb-4 font-mono text-sm"
-            />
+
+            <div className="space-y-3 mb-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="Username"
+                  className="border border-gray-300 rounded-lg px-3 py-2"
+                />
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Password"
+                  className="border border-gray-300 rounded-lg px-3 py-2"
+                />
+                <button
+                  onClick={handleLogin}
+                  className="bg-gray-800 text-white px-6 py-2 rounded-lg hover:bg-gray-900 transition-colors"
+                >
+                  Login
+                </button>
+              </div>
+              <div className="text-sm text-gray-600">
+                {accessToken ? 'Token set.' : 'Not logged in.'}
+              </div>
+              {authMessage && (
+                <div className="text-sm text-gray-700">{authMessage}</div>
+              )}
+            </div>
+
+            <div className="space-y-4 mb-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  PDF File
+                </label>
+                <input
+                  type="file"
+                  accept="application/pdf"
+                  onChange={(e) => setPdfFile(e.target.files?.[0] || null)}
+                  className="block w-full text-sm text-gray-700 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  JSON File
+                </label>
+                <input
+                  type="file"
+                  accept="application/json"
+                  onChange={(e) => setJsonFile(e.target.files?.[0] || null)}
+                  className="block w-full text-sm text-gray-700 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200"
+                />
+              </div>
+            </div>
             
             <button
               onClick={handleLoadData}
@@ -134,21 +252,14 @@ function App() {
         {/* Tab 2: Ask Questions */}
         {activeTab === 2 && (
           <div className="space-y-6">
-            {/* Session ID Input */}
+            {/* Session State Refresh */}
             <div className="bg-white rounded-lg shadow p-6">
               <h2 className="text-xl font-semibold mb-4">Session</h2>
-              <input
-                type="text"
-                value={sessionId}
-                onChange={(e) => setSessionId(e.target.value)}
-                placeholder="Enter session ID (e.g., user123)"
-                className="w-full p-3 border border-gray-300 rounded-lg mb-4"
-              />
               <button
                 onClick={handleGetSessionState}
                 className="bg-gray-600 text-white px-6 py-2 rounded-lg hover:bg-gray-700 transition-colors"
               >
-                Get Session State
+                Refresh Session State
               </button>
             </div>
 
