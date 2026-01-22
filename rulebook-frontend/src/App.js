@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
+import './App.css';
 
 function App() {
   // State to track which tab is active (1 or 2)
@@ -9,6 +10,7 @@ function App() {
   const [jsonFile, setJsonFile] = useState(null);
   const [loadMessage, setLoadMessage] = useState('');
   const [authMessage, setAuthMessage] = useState('');
+  const [apiMessage, setApiMessage] = useState('');
   
   // State for Tab 2 (Chat)
   const [question, setQuestion] = useState('');
@@ -19,18 +21,28 @@ function App() {
   const [username, setUsername] = useState('testuser');
   const [password, setPassword] = useState('testpassword');
   const [accessToken, setAccessToken] = useState('');
+  const [apiBaseUrl, setApiBaseUrl] = useState('http://localhost:8000');
 
-  // Your API base URL - CHANGE THIS to your actual backend URL
-  const API_BASE_URL = 'http://localhost:8000';
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [isLoadingData, setIsLoadingData] = useState(false);
+  const [isAsking, setIsAsking] = useState(false);
+  const [isRefreshingSession, setIsRefreshingSession] = useState(false);
+
+  const apiBaseUrlLabel = useMemo(
+    () => apiBaseUrl.replace(/^https?:\/\//, ''),
+    [apiBaseUrl]
+  );
 
   const handleLogin = async () => {
     try {
       setAuthMessage('');
+      setApiMessage('');
+      setIsLoggingIn(true);
       const form = new URLSearchParams();
       form.append('username', username);
       form.append('password', password);
 
-      const res = await fetch(`${API_BASE_URL}/token`, {
+      const res = await fetch(`${apiBaseUrl}/token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: form.toString()
@@ -46,12 +58,15 @@ function App() {
       setAuthMessage('Logged in');
     } catch (error) {
       setAuthMessage('Login error: ' + error.message);
+    } finally {
+      setIsLoggingIn(false);
     }
   };
 
   // Function to load document data (Tab 1)
   const handleLoadData = async () => {
     try {
+      setLoadMessage('');
       if (!pdfFile || !jsonFile) {
         setLoadMessage('Please choose both a PDF and a JSON file.');
         return;
@@ -65,8 +80,9 @@ function App() {
       formData.append('pdf_file', pdfFile);
       formData.append('json_file', jsonFile);
 
+      setIsLoadingData(true);
       // Make API call to load_data endpoint
-      const res = await fetch(`${API_BASE_URL}/load_data`, {
+      const res = await fetch(`${apiBaseUrl}/load_data`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${accessToken}`
@@ -84,6 +100,8 @@ function App() {
       setActiveTab(2);
     } catch (error) {
       setLoadMessage('Error loading data: ' + error.message);
+    } finally {
+      setIsLoadingData(false);
     }
   };
 
@@ -94,8 +112,13 @@ function App() {
         setResponse('Please log in to get an access token first.');
         return;
       }
+      if (!question.trim()) {
+        setResponse('Please enter a question before submitting.');
+        return;
+      }
+      setIsAsking(true);
       // Make API call to ask question endpoint
-      const res = await fetch(`${API_BASE_URL}/query_ai`, {
+      const res = await fetch(`${apiBaseUrl}/query_ai`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -115,6 +138,8 @@ function App() {
       setSessionState(data.session_state);
     } catch (error) {
       setResponse('Error: ' + error.message);
+    } finally {
+      setIsAsking(false);
     }
   };
 
@@ -125,7 +150,8 @@ function App() {
         setSessionState({ error: 'Please log in to get an access token first.' });
         return;
       }
-      const res = await fetch(`${API_BASE_URL}/session_state`, {
+      setIsRefreshingSession(true);
+      const res = await fetch(`${apiBaseUrl}/session_state`, {
         headers: {
           Authorization: `Bearer ${accessToken}`
         }
@@ -138,36 +164,39 @@ function App() {
       setSessionState(data);
     } catch (error) {
       setSessionState({ error: error.message });
+    } finally {
+      setIsRefreshingSession(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-8">
-      <div className="max-w-4xl mx-auto">
+    <div className="app">
+      <div className="app__shell">
         {/* Header */}
-        <h1 className="text-3xl font-bold text-gray-800 mb-8">
-          Rulebook Agent
-        </h1>
+        <header className="app__header">
+          <div>
+            <p className="app__eyebrow">Hybrid RAG Console</p>
+            <h1>Rulebook Agent</h1>
+          </div>
+          <div className="app__status">
+            <span className={`pill ${accessToken ? 'pill--success' : 'pill--warning'}`}>
+              {accessToken ? 'Authenticated' : 'Not authenticated'}
+            </span>
+            <span className="pill pill--info">API: {apiBaseUrlLabel}</span>
+          </div>
+        </header>
 
         {/* Tab Buttons */}
-        <div className="flex gap-4 mb-6">
+        <div className="tabs">
           <button
             onClick={() => setActiveTab(1)}
-            className={`px-6 py-2 rounded-lg font-medium transition-colors ${
-              activeTab === 1
-                ? 'bg-blue-600 text-white'
-                : 'bg-white text-gray-600 hover:bg-gray-100'
-            }`}
+            className={`tab ${activeTab === 1 ? 'tab--active' : ''}`}
           >
             Load Data
           </button>
           <button
             onClick={() => setActiveTab(2)}
-            className={`px-6 py-2 rounded-lg font-medium transition-colors ${
-              activeTab === 2
-                ? 'bg-blue-600 text-white'
-                : 'bg-white text-gray-600 hover:bg-gray-100'
-            }`}
+            className={`tab ${activeTab === 2 ? 'tab--active' : ''}`}
           >
             Ask Questions
           </button>
@@ -175,126 +204,134 @@ function App() {
 
         {/* Tab 1: Load Data */}
         {activeTab === 1 && (
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-xl font-semibold mb-4">Load Document Data</h2>
+          <div className="card">
+            <h2>Load Document Data</h2>
+            <p className="card__helper">
+              Provide credentials, point to your backend URL, then upload the PDF rules and
+              JSON session objects to start a hybrid RAG session.
+            </p>
 
-            <div className="space-y-3 mb-6">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="grid grid--3">
+              <label className="field">
+                <span>API Base URL</span>
+                <input
+                  type="url"
+                  value={apiBaseUrl}
+                  onChange={(e) => setApiBaseUrl(e.target.value)}
+                  placeholder="http://localhost:8000"
+                />
+              </label>
+              <label className="field">
+                <span>Username</span>
                 <input
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   placeholder="Username"
-                  className="border border-gray-300 rounded-lg px-3 py-2"
                 />
+              </label>
+              <label className="field">
+                <span>Password</span>
                 <input
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Password"
-                  className="border border-gray-300 rounded-lg px-3 py-2"
                 />
-                <button
-                  onClick={handleLogin}
-                  className="bg-gray-800 text-white px-6 py-2 rounded-lg hover:bg-gray-900 transition-colors"
-                >
-                  Login
-                </button>
-              </div>
-              <div className="text-sm text-gray-600">
-                {accessToken ? 'Token set.' : 'Not logged in.'}
-              </div>
-              {authMessage && (
-                <div className="text-sm text-gray-700">{authMessage}</div>
-              )}
+              </label>
             </div>
 
-            <div className="space-y-4 mb-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  PDF File
-                </label>
+            <div className="actions">
+              <button className="button button--ghost" onClick={handleLogin} disabled={isLoggingIn}>
+                {isLoggingIn ? 'Logging in…' : 'Login'}
+              </button>
+              {authMessage && <span className="text-muted">{authMessage}</span>}
+            </div>
+
+            <div className="grid grid--2">
+              <label className="field">
+                <span>PDF File</span>
                 <input
                   type="file"
                   accept="application/pdf"
                   onChange={(e) => setPdfFile(e.target.files?.[0] || null)}
-                  className="block w-full text-sm text-gray-700 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200"
                 />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  JSON File
-                </label>
+              </label>
+              <label className="field">
+                <span>JSON File</span>
                 <input
                   type="file"
                   accept="application/json"
                   onChange={(e) => setJsonFile(e.target.files?.[0] || null)}
-                  className="block w-full text-sm text-gray-700 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200"
                 />
-              </div>
+              </label>
             </div>
-            
-            <button
-              onClick={handleLoadData}
-              className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              Load Data
-            </button>
 
-            {loadMessage && (
-              <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-800">
-                {loadMessage}
-              </div>
-            )}
+            <div className="actions">
+              <button
+                onClick={handleLoadData}
+                className="button"
+                disabled={isLoadingData}
+              >
+                {isLoadingData ? 'Loading…' : 'Load Data'}
+              </button>
+              {loadMessage && <span className="text-muted">{loadMessage}</span>}
+            </div>
+
+            {apiMessage && <div className="notice">{apiMessage}</div>}
           </div>
         )}
 
         {/* Tab 2: Ask Questions */}
         {activeTab === 2 && (
-          <div className="space-y-6">
+          <div className="stack">
             {/* Session State Refresh */}
-            <div className="bg-white rounded-lg shadow p-6">
-              <h2 className="text-xl font-semibold mb-4">Session</h2>
+            <div className="card">
+              <h2>Session</h2>
+              <p className="card__helper">
+                Refresh the session state to confirm which ephemeral objects are currently in
+                memory.
+              </p>
               <button
                 onClick={handleGetSessionState}
-                className="bg-gray-600 text-white px-6 py-2 rounded-lg hover:bg-gray-700 transition-colors"
+                className="button button--ghost"
+                disabled={isRefreshingSession}
               >
-                Refresh Session State
+                {isRefreshingSession ? 'Refreshing…' : 'Refresh Session State'}
               </button>
             </div>
 
             {/* Question Input */}
-            <div className="bg-white rounded-lg shadow p-6">
-              <h2 className="text-xl font-semibold mb-4">Ask a Question</h2>
+            <div className="card">
+              <h2>Ask a Question</h2>
               <textarea
                 value={question}
                 onChange={(e) => setQuestion(e.target.value)}
                 placeholder="Type your question here..."
-                className="w-full h-32 p-3 border border-gray-300 rounded-lg mb-4"
+                className="textarea"
               />
               <button
                 onClick={handleAskQuestion}
-                className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+                className="button"
+                disabled={isAsking}
               >
-                Ask Question
+                {isAsking ? 'Thinking…' : 'Ask Question'}
               </button>
             </div>
 
             {/* Response Display */}
             {response && (
-              <div className="bg-white rounded-lg shadow p-6">
-                <h3 className="text-lg font-semibold mb-3">Response</h3>
-                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                  {response}
-                </div>
+              <div className="card">
+                <h3>Response</h3>
+                <pre className="response">{response}</pre>
               </div>
             )}
 
             {/* Session State Display */}
             {sessionState && (
-              <div className="bg-white rounded-lg shadow p-6">
-                <h3 className="text-lg font-semibold mb-3">Current Session State</h3>
-                <pre className="p-4 bg-gray-50 border border-gray-200 rounded-lg overflow-auto text-sm">
+              <div className="card">
+                <h3>Current Session State</h3>
+                <pre className="code-block">
                   {JSON.stringify(sessionState, null, 2)}
                 </pre>
               </div>
